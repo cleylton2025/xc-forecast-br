@@ -1,0 +1,57 @@
+# Robô de previsão: a cada 6 horas baixa a rodada mais recente do GFS (NOAA),
+# gera os arquivos por hora para ES + MG e publica o site no GitHub Pages.
+name: Atualizar previsão e publicar
+
+on:
+  schedule:
+    # Cerca de 4h40 após cada rodada (00, 06, 12, 18 UTC), quando o GFS já
+    # publicou as 168 h de previsão.
+    - cron: "40 4,10,16,22 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install eccodes numpy requests
+
+      - name: Montar o site
+        run: |
+          mkdir -p _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'scripts' --exclude '_site' ./ _site/
+
+      - name: Baixar e processar o GFS
+        run: python scripts/fetch_gfs.py --out _site/data/gfs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

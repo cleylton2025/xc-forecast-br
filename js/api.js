@@ -249,3 +249,61 @@ export function windAtAltitude(h, aloft, t, z) {
   const v = va + f * (vb - va);
   return { ws: Math.hypot(u, v), wd: ((Math.atan2(-u, -v) * 180) / Math.PI + 360) % 360 };
 }
+
+// ---------- Dados pré-processados pelo robô (GitHub Actions, GFS da NOAA) ----------
+// Resolução nativa e sem cota: o site lê arquivos estáticos, um por hora.
+let staticMeta;
+export async function loadStaticMeta(model) {
+  if (model !== 'gfs') return null;
+  if (staticMeta !== undefined) return staticMeta;
+  try {
+    const r = await fetch('data/gfs/meta.json', { cache: 'no-cache' });
+    staticMeta = r.ok ? await r.json() : null;
+  } catch {
+    staticMeta = null;
+  }
+  return staticMeta;
+}
+
+export function staticContains(meta, lat, lon) {
+  const g = meta.grid;
+  return lat >= g.lat0 && lat <= g.lat0 + (g.ny - 1) * g.step && lon >= g.lon0 && lon <= g.lon0 + (g.nx - 1) * g.step;
+}
+
+export function staticGrid(meta) {
+  const g = meta.grid;
+  const pts = meta.elev.map((elev) => ({ elev, h: {} }));
+  return {
+    spec: { model: 'gfs', step: g.step, lat0: g.lat0, lon0: g.lon0, nx: g.nx, ny: g.ny, key: `static|${meta.run}` },
+    times: meta.times,
+    pts,
+    aloft: pts.map((p) => p.h), // os níveis altos já vêm no mesmo arquivo
+    static: meta,
+    levels: meta.levels,
+    loaded: new Map(),
+    ready: new Set(),
+  };
+}
+
+// Carrega (uma vez) o arquivo de um horário e distribui os valores pelos pontos
+export function ensureStaticHour(grid, t) {
+  if (grid.loaded.has(t)) return grid.loaded.get(t);
+  const n = grid.times.length;
+  const p = fetch(`data/gfs/h/${grid.static.files[t]}`)
+    .then((r) => {
+      if (!r.ok) throw new Error('Falha ao carregar o horário.');
+      return r.json();
+    })
+    .then((d) => {
+      for (const [k, arr] of Object.entries(d))
+        arr.forEach((v, i) => {
+          const h = grid.pts[i].h;
+          if (!h[k]) h[k] = new Array(n).fill(null);
+          h[k][t] = v;
+        });
+      grid.ready.add(t);
+    });
+  grid.loaded.set(t, p);
+  p.catch(() => grid.loaded.delete(t));
+  return p;
+}

@@ -39,8 +39,10 @@ Os pontos de calibração estão no topo de `physics.js` (`LIFT_USABLE`, `GLIDER
 
 ## Dados e limites
 
-- Os dados vêm da [Open-Meteo](https://open-meteo.com/) (CC BY 4.0). O **plano gratuito é só para uso não comercial** e tem limite diário por IP. Cada carga de área usa ~600 "chamadas", o que dá cerca de 15 cargas de área por dia por conexão. Há cache em memória durante a sessão.
-- Para caber no limite, a grade tem no máximo 150 pontos. Em áreas grandes ela fica mais grossa; aproximar o mapa refina.
+- **Robô de dados (GFS, ES + MG):** o workflow `.github/workflows/deploy.yml` roda a cada 6 horas (e a cada push). Ele baixa a rodada mais recente do GFS 0,25° direto da NOAA (AWS Open Data: gratuito, sem limite, domínio público), recorta a região, converte e publica junto com o site, com um arquivo JSON por hora (06h–20h, 7 dias). Leva poucos minutos e não grava nada no histórico do git.
+  - Para rodar localmente: `pip install eccodes numpy requests` e depois `python scripts/fetch_gfs.py --out data/gfs --max-hours 5`
+  - Região e horários: `REGION`, `LOCAL_HOURS` e `MAX_FORECAST` no início de `scripts/fetch_gfs.py`.
+- **Open-Meteo** (CC BY 4.0): usada para o ICON, para o GFS fora da região do robô e para o detalhe de cada ponto. O plano gratuito é **só para uso não comercial** e tem limites por minuto, hora e dia por IP; a grade nesse modo tem até 90 pontos.
 - Modelos globais não resolvem relevo fino, brisa marítima nem convecção local.
 
 ## Estrutura
@@ -54,10 +56,12 @@ js/physics.js     cálculos de meteorologia de voo
 js/render.js      cores, desenho da camada, legenda, barbelas
 js/point.js       painel do ponto (gráfico, Skew-T, comparação)
 js/config.js      catálogo de camadas, escalas, mapas base
+scripts/fetch_gfs.py          robô: baixa e recorta o GFS da NOAA
+.github/workflows/deploy.yml  agenda o robô e publica no GitHub Pages
 ```
 
 ## Próximos passos
 
 1. Calibrar os índices com voos reais.
-2. Ter um servidor próprio que processe os arquivos GRIB do GFS/ICON (gratuitos, sem limite), com resolução nativa no país inteiro e sem depender da cota da Open-Meteo. Isso é obrigatório para uso comercial.
+2. Levar o detalhe do ponto também para os dados do robô e incluir o ICON (DWD), o que exige reprojetar a grade icosaédrica. Com isso o site deixa de depender da Open-Meteo, condição para uso comercial.
 3. Corte vertical ao longo de uma rota, perfis de região e login.

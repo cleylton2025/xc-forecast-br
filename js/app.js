@@ -1,4 +1,17 @@
-import { MODELS, gridSpec, specCovers, fetchGrid, fetchAloft, sampleFrom, windAtAltitude, searchPlace } from './api.js';
+import {
+  MODELS,
+  gridSpec,
+  specCovers,
+  fetchGrid,
+  fetchAloft,
+  sampleFrom,
+  windAtAltitude,
+  searchPlace,
+  loadStaticMeta,
+  staticContains,
+  staticGrid,
+  ensureStaticHour,
+} from './api.js';
 import { derive } from './physics.js';
 import { GROUPS, PARAMS, SCALES, WIND_MODES, BASEMAPS, LABELS_URL, DEFAULT_VIEW } from './config.js';
 import { renderField, legendHTML, barbSVG, fmt } from './render.js';
@@ -72,7 +85,7 @@ const map = L.map('map', { zoomControl: false, attributionControl: true }).setVi
   initial && Number.isFinite(initial.zoom) ? initial.zoom : DEFAULT_VIEW.zoom,
 );
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-map.attributionControl.addAttribution('Dados: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (GFS, ICON)');
+map.attributionControl.addAttribution('Dados: NOAA GFS · <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>');
 map.createPane('data').style.zIndex = 350;
 map.createPane('labels').style.zIndex = 420;
 map.getPane('labels').style.pointerEvents = 'none';
@@ -118,6 +131,22 @@ let inflight = false;
 let pending = false;
 let retryTimer = null;
 async function ensureGrid(force = false) {
+  // GFS dentro da região do robô: arquivos estáticos, resolução nativa, sem cota
+  const meta = state.model === 'gfs' ? await loadStaticMeta('gfs') : null;
+  const c = map.getCenter();
+  if (meta && staticContains(meta, c.lat, c.lng)) {
+    if (state.grid?.static !== meta) {
+      loadSeq++;
+      clearTimeout(retryTimer);
+      state.grid = staticGrid(meta);
+      state.derivedCache.clear();
+      pickTime();
+      buildTimeGrid();
+      status('');
+      redraw();
+    }
+    return;
+  }
   if (inflight) {
     pending = true;
     return;
@@ -126,7 +155,7 @@ async function ensureGrid(force = false) {
   const bounds = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() };
   const spec = gridSpec(state.model, bounds);
   const same = state.grid && state.grid.spec.model === state.model;
-  if (!force && same && specCovers(state.grid.spec, bounds) && spec.step >= state.grid.spec.step - 1e-9) return;
+  if (!force && same && !state.grid.static && specCovers(state.grid.spec, bounds) && spec.step >= state.grid.spec.step - 1e-9) return;
   if (same && state.grid.spec.key === spec.key) return;
   clearTimeout(retryTimer);
   const seq = ++loadSeq;
@@ -191,16 +220,32 @@ function pickTime() {
 function derivedAt(t) {
   if (state.derivedCache.has(t)) return state.derivedCache.get(t);
   const g = state.grid;
-  const arr = g.pts.map((p) => derive(sampleFrom(p.h, p.elev, t, state.model)));
+  if (g.static && !g.ready.has(t)) return g.pts.map(() => null); // horário ainda carregando
+  const arr = g.pts.map((p) => derive(sampleFrom(p.h, p.elev, t, state.model, g.levels)));
   state.derivedCache.set(t, arr);
   return arr;
 }
 
 // ---------- Desenho ----------
-function redraw() {
+async function redraw() {
   writeHash();
   renderLegend();
-  if (!state.grid || state.t == null) return;
+  const g = state.grid;
+  const t = state.t;
+  if (!g || t == null) return;
+  if (g.static) {
+    if (!g.loaded.has(t)) status('Carregando horário…', 'info');
+    try {
+      await ensureStaticHour(g, t);
+    } catch (e) {
+      status(e.message, 'error', 6000);
+      return;
+    }
+    if (g !== state.grid || t !== state.t) return;
+    status('');
+    // Adianta os próximos horários (animação e navegação rápidas)
+    for (const k of [t + 1, t + 2]) if (k < g.times.length) ensureStaticHour(g, k).catch(() => {});
+  }
   const d = derivedAt(state.t);
   const param = PARAMS[state.param];
   const scale = SCALES[param.scale];
@@ -259,12 +304,18 @@ async function drawBarbs(d) {
     }
 }
 
+// "2026-10-19T12:00Z" → "19/10 09h" (horário de Brasília)
+function runLabel(iso) {
+  const d = new Date(new Date(iso).getTime() - 3 * 3600e3);
+  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}h`;
+}
+
 function renderLegend() {
   const p = PARAMS[state.param];
   const windLabel = WIND_MODES.find((w) => w[0] === state.wind)?.[1];
   $('#legend').innerHTML =
     legendHTML(p, SCALES[p.scale]) +
-    `<div class="legend-foot">${MODELS[state.model].label} ${MODELS[state.model].res}${state.grid && state.grid.spec.step > MODELS[state.model].step * 1.01 ? ' · grade reduzida (aproxime o mapa)' : ''}${state.wind !== 'none' ? `<br>Vento: ${windLabel} (km/h)` : ''}</div>`;
+    `<div class="legend-foot">${MODELS[state.model].label} ${MODELS[state.model].res}${state.grid?.static ? ` · rodada ${runLabel(state.grid.static.run)}` : state.grid && state.grid.spec.step > MODELS[state.model].step * 1.01 ? ' · grade reduzida (aproxime o mapa)' : ''}${state.wind !== 'none' ? `<br>Vento: ${windLabel} (km/h)` : ''}</div>`;
 }
 
 // ---------- Grade de horários ----------
