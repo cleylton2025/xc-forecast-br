@@ -4,17 +4,18 @@
 
 const BASE = 'https://api.open-meteo.com/v1/forecast';
 const TZ = 'America/Sao_Paulo';
-// Cada ponto custa ~4 "chamadas" da cota gratuita (por ter ~40 variáveis);
-// 150 pontos ficam abaixo do limite de 600 chamadas por minuto.
-const MAX_POINTS = 150;
+// A Open-Meteo conta 1 "chamada" a cada 10 variáveis por ponto. Com 33 variáveis
+// e até 90 pontos, uma carga de área custa ~300 chamadas, metade do limite
+// gratuito por minuto (600) e folgada para o limite por hora (5.000).
+const MAX_POINTS = 90;
 
 export const MODELS = {
   gfs: { api: 'gfs_seamless', label: 'GFS', res: '25 km', step: 0.25, shfSign: 1 },
   icon: { api: 'icon_global', label: 'ICON', res: '13 km', step: 0.125, shfSign: -1 },
 };
 
-const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500];
-const WIND_LEVELS = [950, 925, 850, 700];
+const LEVELS = [1000, 950, 900, 850, 800, 700, 600, 500];
+const WIND_LEVELS = [950, 850, 700];
 const ALOFT_LEVELS = [800, 600, 500, 400, 300];
 const POINT_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 400, 300, 250];
 
@@ -69,13 +70,16 @@ async function getJSON(url) {
         const r = await fetch(url);
         if (r.status === 429) {
           const body = await r.json().catch(() => ({}));
-          const daily = /daily/i.test(body.reason || '');
+          const daily = /daily|hourly/i.test(body.reason || '');
           const e = new Error(
             daily
-              ? 'Limite diário gratuito da Open-Meteo atingido nesta conexão. Volta a funcionar amanhã.'
-              : 'Muitas requisições em pouco tempo. Aguarde um minuto e tente de novo.',
+              ? /hourly/i.test(body.reason || '')
+                ? 'Limite por hora da Open-Meteo atingido nesta conexão. Tente de novo mais tarde.'
+                : 'Limite diário gratuito da Open-Meteo atingido nesta conexão. Volta a funcionar amanhã.'
+              : 'Muitas requisições em pouco tempo.',
           );
           e.rateLimit = true;
+          e.minutely = !daily;
           throw e;
         }
         if (!r.ok) throw new Error(`Erro ${r.status} ao buscar dados.`);

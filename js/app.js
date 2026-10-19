@@ -85,9 +85,11 @@ function setBase(id) {
   if (baseLayer) map.removeLayer(baseLayer);
   const b = BASEMAPS[state.base];
   baseLayer = L.tileLayer(b.url, b.opts).addTo(map);
+  if (b.labels) labelsLayer.addTo(map);
+  else labelsLayer.remove();
   document.querySelectorAll('.basemaps button').forEach((el) => el.classList.toggle('active', el.dataset.id === state.base));
 }
-L.tileLayer(LABELS_URL, { pane: 'labels', subdomains: 'abcd', maxZoom: 19 }).addTo(map);
+const labelsLayer = L.tileLayer(LABELS_URL, { pane: 'labels', maxZoom: 18 });
 
 let overlay = null;
 const barbLayer = L.layerGroup([], { pane: 'barbs' }).addTo(map);
@@ -109,32 +111,60 @@ function status(msg, kind = 'info', ms = 0) {
 }
 
 // ---------- Grade ----------
+// Economia de cota: uma busca por vez, só quando a área sai da grade carregada
+// ou quando aproximar o mapa permite uma grade mais fina.
 let loadSeq = 0;
+let inflight = false;
+let pending = false;
+let retryTimer = null;
 async function ensureGrid(force = false) {
+  if (inflight) {
+    pending = true;
+    return;
+  }
   const b = map.getBounds().pad(0.15);
   const bounds = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() };
-  if (!force && state.grid && state.grid.spec.model === state.model && specCovers(state.grid.spec, bounds)) {
-    // Ainda coberto; mas se der zoom muito para dentro com grade grossa, refina.
-    const nat = MODELS[state.model].step;
-    if (state.grid.spec.step <= nat * 1.01 || map.getZoom() < 8) return;
-  }
   const spec = gridSpec(state.model, bounds);
-  if (state.grid && state.grid.spec.key === spec.key) return;
+  const same = state.grid && state.grid.spec.model === state.model;
+  if (!force && same && specCovers(state.grid.spec, bounds) && spec.step >= state.grid.spec.step - 1e-9) return;
+  if (same && state.grid.spec.key === spec.key) return;
+  clearTimeout(retryTimer);
   const seq = ++loadSeq;
+  inflight = true;
   status(`Carregando ${MODELS[state.model].label}…`, 'info');
   try {
     const grid = await fetchGrid(spec);
-    if (seq !== loadSeq) return;
-    state.grid = grid;
-    state.derivedCache.clear();
-    pickTime();
-    buildTimeGrid();
-    status('');
-    redraw();
+    if (seq === loadSeq) {
+      state.grid = grid;
+      state.derivedCache.clear();
+      pickTime();
+      buildTimeGrid();
+      status('');
+      redraw();
+    }
   } catch (e) {
-    if (seq !== loadSeq) return;
-    status(e.message || 'Falha ao carregar dados.', 'error');
+    if (seq === loadSeq) {
+      if (e.minutely) retryCountdown(60);
+      else status(e.message || 'Falha ao carregar dados.', 'error');
+    }
+  } finally {
+    inflight = false;
+    if (pending) {
+      pending = false;
+      ensureGrid();
+    }
   }
+}
+
+// Limite por minuto: espera e tenta de novo sozinho
+function retryCountdown(sec) {
+  clearTimeout(retryTimer);
+  if (sec <= 0) {
+    ensureGrid(true);
+    return;
+  }
+  status(`Muitas requisições em pouco tempo. Tentando de novo em ${sec} s…`, 'error');
+  retryTimer = setTimeout(() => retryCountdown(sec - 1), 1000);
 }
 
 function pickTime() {

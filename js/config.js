@@ -396,16 +396,19 @@ export const BASEMAPS = {
   },
   light: {
     label: 'Claro',
-    url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-    opts: { maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO' },
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    opts: { maxZoom: 16, attribution: 'Tiles © Esri' },
+    labels: true,
   },
   satellite: {
     label: 'Satélite',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     opts: { maxZoom: 18, attribution: 'Tiles © Esri' },
+    labels: true,
   },
 };
 
-export const LABELS_URL = 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png';
+// Nomes de cidades e limites, por cima da camada (só nos mapas base sem rótulos)
+export const LABELS_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 
 export const DEFAULT_VIEW = { lat: -20.2, lon: -40.9, zoom: 9 };
