@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XC Brasil · Previsão para voo livre</title>
+  <meta name="description" content="Previsão de térmicas e condições de voo livre (parapente e asa-delta) para o Brasil, com dados GFS e ICON." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 18 Q16 4 30 18 L16 14 Z' fill='%230b5cad'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <aside id="sidebar" class="open" aria-label="Camadas e opções">
+    <header class="sb-head">
+      <button id="sbToggle" class="icon-btn" aria-label="Recolher painel">☰</button>
+      <h1>XC Brasil</h1>
+    </header>
+    <nav class="sb-tabs" role="tablist">
+      <button class="tab active" data-tab="layers" role="tab">Camadas</button>
+      <button class="tab" data-tab="favs" role="tab">Favoritos</button>
+      <button class="tab" data-tab="about" role="tab">Sobre</button>
+    </nav>
+    <div class="sb-body">
+      <section id="tab-layers" class="tabpane active">
+        <form id="searchForm" class="search" role="search">
+          <input id="searchInput" type="search" placeholder="Buscar cidade ou rampa…" autocomplete="off" aria-label="Buscar local" />
+          <ul id="searchResults" class="search-results"></ul>
+        </form>
+        <div class="basemaps" id="basemaps"></div>
+        <div id="paramList"></div>
+        <button id="layerInfoBtn" class="link-btn">Detalhes da camada</button>
+      </section>
+      <section id="tab-favs" class="tabpane">
+        <p class="muted small">Use o botão <b>★ Salvar</b> no mapa para guardar a vista atual (local, camada e modelo). Fica salvo só neste navegador.</p>
+        <ul id="favList" class="fav-list"></ul>
+      </section>
+      <section id="tab-about" class="tabpane">
+        <h2>Como funciona</h2>
+        <p>Os dados brutos vêm dos modelos <b>GFS</b> (NOAA, ~25 km) e <b>ICON</b> (DWD, ~13 km), via <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Os índices de voo (teto de térmica, força, potencial XC etc.) são calculados aqui mesmo, no navegador, com o método da parcela e a escala convectiva de Deardorff.</p>
+        <p>Clique em qualquer ponto do mapa para ver o dia hora a hora, a sondagem (Skew-T) e a comparação entre os modelos.</p>
+        <h2>Limites</h2>
+        <p>Modelos globais não enxergam detalhes de relevo, brisa marítima nem convecção local. Use como orientação, nunca como única base para decidir um voo.</p>
+        <p class="muted small">Horários em horário de Brasília. Dados: Open-Meteo.com (CC BY 4.0).</p>
+      </section>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="map" aria-label="Mapa"></div>
+    <button id="mobileMenu" aria-label="Abrir camadas">☰</button>
+
+    <div id="timebox" class="panel">
+      <div class="tb-head">
+        <div class="models" id="models" role="group" aria-label="Modelo"></div>
+        <span class="tz muted small">Horário de Brasília</span>
+        <button id="timeToggle" class="icon-btn small" aria-label="Recolher horários">▴</button>
+      </div>
+      <div class="timegrid-wrap"><table id="timegrid" class="timegrid"></table></div>
+    </div>
+
+    <div id="toolbar" class="panel">
+      <label class="tool">Vento
+        <select id="windSel" aria-label="Altura do vento"></select>
+      </label>
+      <button id="playBtn" class="icon-btn" aria-label="Animar horas" title="Animar horas">▶</button>
+      <label class="tool">Opacidade
+        <input id="opacity" type="range" min="0.2" max="1" step="0.05" value="0.75" aria-label="Opacidade da camada" />
+      </label>
+    </div>
+
+    <div id="topright">
+      <button id="saveBtn" class="save-btn" title="Salvar vista nos favoritos">★ Salvar</button>
+    </div>
+
+    <div id="legend" class="panel"></div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </main>
+
+  <section id="pointPanel" class="point-panel" hidden aria-label="Detalhes do ponto">
+    <header>
+      <div>
+        <h2 id="ppTitle">Ponto</h2>
+        <div id="ppSub" class="muted small"></div>
+      </div>
+      <button id="ppClose" class="icon-btn" aria-label="Fechar">✕</button>
+    </header>
+    <nav class="pp-tabs" role="tablist">
+      <button class="pptab active" data-pp="day">Dia</button>
+      <button class="pptab" data-pp="skewt">Sondagem</button>
+      <button class="pptab" data-pp="cmp">Comparar modelos</button>
+    </nav>
+    <div id="ppBody" class="pp-body"></div>
+  </section>
+
+  <dialog id="infoDlg">
+    <form method="dialog">
+      <h2 id="infoTitle"></h2>
+      <p id="infoText"></p>
+      <button class="primary">Ok</button>
+    </form>
+  </dialog>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
